@@ -1,63 +1,63 @@
 # AdaTM: Adaptive Fusion of Transformer and Mamba for Time Series Forecasting
 
-Official implementation of **AdaTM (Adaptive Fusion of Transformer and Mamba for Time Series Forecasting)**.
+This repository provides the implementation of **AdaTM (Adaptive Fusion of Transformer and Mamba for Time Series Forecasting)**.
 
-AdaTM combines **multi-level discrete wavelet decomposition (DWT)**, **resolution-specific patch embedding**, and **adaptive fusion of Transformer and bidirectional Mamba experts** for multivariate time-series forecasting. This repository contains the model, data loaders, training/evaluation code, and experimental settings used in our study.
+AdaTM combines multi-level discrete wavelet transform (DWT), resolution-specific patching, and adaptive fusion of **Transformer** and **bidirectional Mamba (Bi-Mamba)** experts for time-series forecasting.
 
-**Repository:** https://github.com/wwy-1208/AdaTM
+**Code repository:** https://github.com/wwy-1208/AdaTM
 
-## Overview
+> **Manuscript-aligned configuration.** The experimental settings below follow the revised AdaTM manuscript and its response letter for *Digital Signal Processing* (DSP-D-26-02831). In the manuscript, each dataset has **one fixed wavelet/patch/training configuration across all four prediction horizons**. Accordingly, this README does not use horizon-specific hyperparameter overrides. These settings document the manuscript's stated experimental protocol; the exact correspondence of published results to successful execution logs and checkpoints should be verified independently before claiming exact reproduction.
 
-1. **Multi-resolution decomposition:** DWT separates each input series into approximation and detail coefficients.
-2. **Resolution-specific patching:** Each coefficient branch uses specified patch lengths and strides.
-3. **Hybrid experts:** Transformer and bidirectional Mamba modules learn complementary temporal representations; a learned gate fuses their outputs.
-4. **Forecasting:** Branch representations are combined and projected to the requested prediction horizon.
+## 1. Overview
 
-**Scope of adaptivity.** AdaTM learns the expert-fusion weights. The wavelet basis, DWT level, and branch patch lengths/strides are **configured before training**, not automatically selected for each sample.
+AdaTM contains three primary components:
 
-## Repository layout
+1. **Multi-level wavelet decomposition:** DWT decomposes the input sequence into one approximation coefficient sequence and several detail coefficient sequences, allowing the model to analyze multiple temporal resolutions.
+2. **Resolution-specific patching:** Each wavelet branch uses its own *predefined* patch length and stride to construct patch tokens.
+3. **Adaptive feature fusion:** Transformer and Bi-Mamba experts encode complementary temporal information. A learned softmax gate dynamically combines their representations before forecasting.
+
+The term **adaptive** refers to the learned expert-fusion weights. The wavelet basis, DWT decomposition level, patch lengths, and strides are selected as experimental hyperparameters; they are **not learned or changed automatically for individual inputs**.
+
+## 2. Repository structure
 
 ```text
 AdaTM/
-├── run.py                       # Training and evaluation entry point
-├── exp/exp_main.py              # Training, validation and testing
-├── models/AdaTM.py                # AdaTM model implementation (class AdaTMModel)
-├── layers/                      # Wavelet, patching, Transformer and Mamba modules
-├── data_provider/               # Dataset loaders and preprocessing
-├── utils/                       # Metrics, early stopping and helper functions
-├── pytorch_wavelets/            # Wavelet implementation included in the source tree
-├── scripts/                     # Legacy AdaTM scripts; see note below
-└── data/                        # Place the datasets here
+├── run.py                    # Training and testing entry point
+├── models/                   # AdaTM model
+├── exp/                      # Experiment and optimization pipeline
+├── layers/                   # Transformer, Mamba, DWT, patch, fusion layers
+├── data_provider/            # Dataset loaders and preprocessing
+├── utils/                    # Evaluation metrics and training utilities
+├── pytorch_wavelets/         # Bundled wavelet implementation (where present)
+├── scripts/                  # Experiment scripts (verify against this README)
+└── data/                     # Local benchmark datasets
 ```
 
-> **Entry-point naming:** In the provided code, AdaTM is implemented as `AdaTMModel` in `models/AdaTM.py`, and `run.py` registers it under `--model AdaTM`. **Use `--model AdaTM` in commands** unless you also update the model registry. Some files retain names inherited from the AdaTM codebase.
->
-> **Script compatibility:** Some older files in `scripts/` use legacy argument names. The commands below use arguments supported by the current `run.py` and should be preferred when reproducing AdaTM experiments.
+The existing command-line model identifier is `--model AdaTM`. The directory names shown above refer to the repository layout documented with this codebase; inspect the checkout if you are using a different code revision.
 
-## Environment setup
+## 3. Environment
 
-A Linux machine with an NVIDIA CUDA GPU is recommended. The original project environment used Python 3.10 and the `mamba-ssm` package. PyTorch, CUDA, and `mamba-ssm` versions must be mutually compatible; install a CUDA-enabled PyTorch build appropriate for your system before installing Mamba.
+A Linux machine with an NVIDIA GPU is recommended. The package builds of **PyTorch**, **CUDA**, and **mamba-ssm** must be compatible.
 
 ```bash
 conda create -n adatm python=3.10 -y
 conda activate adatm
 
-# Install the CUDA-enabled PyTorch build compatible with your GPU/CUDA setup.
-# Follow https://pytorch.org/get-started/locally/
+# Install a CUDA-enabled PyTorch build compatible with your system:
+# https://pytorch.org/get-started/locally/
 
 pip install numpy pandas scipy scikit-learn matplotlib einops PyWavelets \
   transformers ptflops yacs
 
-# Install a compatible mamba-ssm version for your PyTorch/CUDA environment.
-# See https://github.com/state-spaces/mamba
+# Install mamba-ssm after selecting compatible PyTorch / CUDA versions:
 pip install mamba-ssm
 ```
 
-The source archive already contains a local `pytorch_wavelets/` package. If running a different code snapshot without that directory, install a compatible `pytorch-wavelets` implementation. Package versions have not been locked in this README; **record your actual Python, PyTorch, CUDA, and Mamba versions when reporting reproduced results**.
+The manuscript does not specify an exact fully pinned package environment. For a reproducible release, record the specific Python, PyTorch, CUDA, Mamba, and wavelet-library versions tested with the code. If the repository bundles `pytorch_wavelets/`, retain the implementation used in the successful runs.
 
-## Data preparation
+## 4. Datasets
 
-Use the following layout (relative to the repository root):
+Arrange the seven forecasting datasets as follows:
 
 ```text
 data/
@@ -74,84 +74,80 @@ data/
     └── traffic.csv
 ```
 
-The ETT loaders use the standard fixed chronological partitions. For datasets passed with `--data custom`, the loader uses chronological splits of approximately **70% training / 10% validation / 20% testing**. Standardization is fitted **only on training data** and then applied to the other splits. CSV files should have a `date` column; the current custom loader also expects a target column named `OT` (even when `--features M` is used).
+| Dataset | Variables | Sampling frequency |
+|---|---:|---|
+| ETTh1 | 7 | Hourly |
+| ETTh2 | 7 | Hourly |
+| ETTm1 | 7 | 15 minutes |
+| ETTm2 | 7 | 15 minutes |
+| Weather | 21 | 10 minutes |
+| Electricity | 321 | Hourly |
+| Traffic | 862 | Hourly |
 
-In the reported multivariate setting, `--features M` forecasts all feature channels. Dataset channel counts in the provided CSV files are ETTh1/ETTh2/ETTm1/ETTm2: **7**, Weather: **21**, Electricity: **321**, and Traffic: **862**.
+The manuscript uses **multivariate-to-multivariate forecasting**, corresponding to `--features M` in the code. Its forecasting horizons are
 
-## Experimental configurations
+\[
+F \in \{96, 192, 336, 720\}.
+\]
 
-### Dataset-specific settings (prediction horizon = 96)
+The look-back length is **96 for ETTh1** and **672 for the other six datasets**. All model comparisons must use the data partition and scaling protocol reported in the manuscript. The loader's actual split and column requirements depend on the code revision. For the provided code conventions, ETT datasets use their standard chronological partitions; the generic `custom` loader uses chronological partitions and generally requires a `date` field and the designated target column (commonly `OT`). Check your actual CSV column names before executing the examples below.
 
-The following table reproduces the representative dataset-specific settings reported in the manuscript (the seven-row configuration table). `L` denotes the look-back length; `label_len` is the history length passed to the data loader.
+## 5. Experimental configurations reported in the paper
 
-| Dataset | L | `label_len` | Channels | Batch size | Learning rate | Wavelet | DWT level | Patch lengths | Strides |
-|---|---:|---:|---:|---:|---:|---|---:|---|---|
-| ETTh1 | 96 | 48 | 7 | 256 | 3e-4 | db3 | 2 | 2,4,4 | 1,2,2 |
-| ETTh2 | 672 | 336 | 7 | 256 | 3e-4 | coif5 | 3 | 8,16,32,48 | 4,8,16,24 |
-| ETTm1 | 672 | 336 | 7 | 128 | 3e-4 | db2 | 1 | 8,48 | 4,24 |
-| ETTm2 | 672 | 336 | 7 | 128 | 3e-4 | db2 | 1 | 8,48 | 4,24 |
-| Weather | 672 | 336 | 21 | 128 | 3e-4 | db3 | 2 | 4,8,16 | 2,4,8 |
-| Electricity | 672 | 336 | 321 | 16 | 3e-4 | sym3 | 1 | 8,16 | 4,8 |
-| Traffic | 672 | 336 | 862 | 16 | 1e-4 | db3 | 1 | 4,24 | 2,12 |
+### 5.1 Dataset-specific configurations
 
-**Important:** The table is **not** a single configuration applied unchanged to all four forecasting horizons. Several reported runs used horizon-specific settings. The adjustments documented in the original experiment commands are listed below.
+**Table 1.** Dataset-specific settings used for the four prediction horizons **96, 192, 336, and 720**. The DWT and patch configurations are held fixed **within each dataset** across these horizons.
 
-<details>
-<summary><strong>Horizon-dependent overrides from the recorded experiment commands</strong></summary>
+| Dataset | Look-back `seq_len` | Batch size | Max learning rate | Wavelet | DWT level | Patch lengths | Strides |
+|---|---:|---:|---:|---|---:|---|---|
+| ETTh1 | 96 | 256 | `3e-4` | `db3` | 2 | `2,4,4` | `1,2,2` |
+| ETTh2 | 672 | 256 | `3e-4` | `coif5` | 3 | `8,16,32,48` | `4,8,16,24` |
+| ETTm1 | 672 | 128 | `3e-4` | `db2` | 1 | `8,48` | `4,24` |
+| ETTm2 | 672 | 128 | `3e-4` | `db2` | 1 | `8,48` | `4,24` |
+| Weather | 672 | 128 | `3e-4` | `db3` | 2 | `4,8,16` | `2,4,8` |
+| Electricity | 672 | 16 | `3e-4` | `sym3` | 1 | `8,16` | `4,8` |
+| Traffic | 672 | 16 | `1e-4` | `db3` | 1 | `4,24` | `2,12` |
 
-| Dataset / horizon | Recorded changes relative to the horizon-96 row |
+**Important:** The manuscript reports one dataset-specific configuration for every prediction horizon. In particular, **do not switch ETTh2 from `coif5` to `db3`, do not change Weather from DWT level 2 to level 1, and do not change Electricity from `sym3` to another basis for longer horizons** if your goal is to follow the revised manuscript protocol.
+
+### 5.2 Shared architecture and training settings
+
+**Table 2.** Fixed settings as stated in the revised manuscript.
+
+| Parameter | Manuscript setting |
 |---|---|
-| ETTh1 / 192, 336, 720 | Same DWT/patch configuration and `L=96`, `label_len=48` |
-| ETTh2 / 192 and 336 | db3, DWT level 1, patches `8,48`, strides `4,24`, 10 epochs |
-| ETTh2 / 720 | db3, level 1, patches `48,8`, strides `24,4`, LR `1e-4`, dropout `0.3`, 10 epochs |
-| ETTm1 / 192, 336, 720 | Same configuration as horizon 96, 10 epochs |
-| ETTm2 / 192 and 336 | Same configuration as horizon 96, 10 epochs |
-| ETTm2 / 720 | Batch size 64, LR `1e-4`, 10 epochs |
-| Weather / 192 | db3, level 1, patches `8,24`, strides `4,12` |
-| Weather / 336 | db3, level 1, patches `4,24`, strides `2,12` |
-| Weather / 720 | Same as Weather/336, LR `1e-4` |
-| Electricity / 192 | coif5, level 2, patches `4,8,16`, strides `2,4,8` |
-| Electricity / 336 and 720 | sym4, level 2, patches `4,8,16`, strides `2,4,8` |
-| Traffic / 192, 336, 720 | Same configuration as horizon 96 |
-
-**Recorded-command caveats:** In the provided run-command document, the Electricity/192 command omits `--seq_len` and `--label_len` (the parser defaults would therefore be 96 and 48); the Electricity/96 command has a typo in `--train_epochs10` (correct syntax: `--train_epochs 10`); and the first ETTh1/96 command uses `--model AdaTM`, although the provided registry accepts `AdaTM`. Check successful experiment logs before asserting those ambiguous commands exactly reproduce published numbers.
-
-</details>
-
-### Architecture and training settings
-
-| Parameter | Setting |
-|---|---|
-| Optimizer | Adam (`betas=(0.9, 0.999)`, `eps=1e-8`, weight decay `0`) |
-| Learning-rate scheduler | OneCycleLR, stepped once per training mini-batch; default cosine annealing |
-| OneCycle warm-up (`pct_start`) | 0.3, or 0.2 for Traffic |
-| Maximum training epochs | 10 for most recorded runs; 20 in the recorded ETTh1 and ETTh2/96 runs |
-| Loss | MSE with numerical clipping to `[-1e4, 1e4]` in `SafeMSELoss` |
-| Early stopping | Validation loss; patience 10 epochs |
-| Main random seed | 2021; five-seed robustness experiments: 2021, 2022, 2023, 2024, 2025 |
-| Embedding dimension (`d_model`) | 32; Traffic uses 64 |
-| MoE blocks per wavelet branch (`e_layers`) | 3 |
-| Attention heads (`n_heads`) | 8 |
-| Transformer layers in each expert | 1 encoder layer |
-| Bidirectional Mamba expert | Forward and backward Mamba modules; one internal encoder layer per expert |
-| Mamba expansion factor | 1 (set by the expert implementation) |
-| Mamba state dimension (`d_state`) | 16 |
-| Mamba convolution width (`d_conv`) | 4 |
-| Feed-forward dimension (`d_ff`) | 128 |
+| Optimizer | Adam |
+| Learning-rate scheduler | OneCycleLR |
+| Maximum training epochs | **10** |
+| Training loss | MSE |
+| Early stopping | Validation loss, patience = 10 |
+| Main experiment random seed | 2021 |
+| Five-seed statistical experiments | 2021, 2022, 2023, 2024, 2025 |
+| Embedding dimension | **32 for all datasets** |
+| Transformer encoder layers | 3 |
+| Attention heads | 8 |
+| Feed-forward dimension | 128 |
+| Mamba layers (manuscript configuration) | 2 |
+| Mamba expansion factor | 1 |
+| Mamba state dimension | 16 |
+| Mamba convolution kernel size | 4 |
 | Activation | GELU |
-| Main dropout | 0.2; selected runs use 0.3 (including Traffic) |
-| FC dropout CLI setting | 0.2 by default (0.3 in specified runs); note that an exposed flag is not necessarily used by every active layer |
-| RevIN / affine | Enabled / enabled |
-| Parameter initialization | Module-specific PyTorch defaults and Mamba implementation defaults; RevIN scale initialized to 1, bias to 0 |
-| Prediction head | Flattening-based head (not a separate Transformer decoder) |
+| RevIN | Enabled |
+| RevIN affine transformation | Enabled |
+| Dropout | **0.2 for all datasets** |
+| Fully connected dropout | **0.2 for all datasets** |
+| Initialization | PyTorch defaults |
+| Weight decay | 0 |
 
-**Terminology note:** The parser exposes `--m_layers 2` and `--d_layers 1`, but these flags should **not** be interpreted as two stacked Mamba encoder layers and an active Transformer decoder. The active implementation constructs three MoE blocks per branch, with one internal bidirectional Mamba expert layer in each MoE block.
+The revised LaTeX configuration table also records a decoder-layer configuration value of `1`. The provided README for the codebase notes that forecasting is performed through a flattening prediction head rather than an active Transformer decoder. Likewise, the command-line fields `--e_layers` and `--m_layers` may describe the construction of MoE blocks and Bi-Mamba components rather than a simple count of stacked vanilla Transformer/Mamba layers. **For structural reproducibility, compare the model graph in the exact code revision with the manuscript's architecture table**; documenting a flag alone does not prove the stated number of active layers.
 
-## Running AdaTM
+The manuscript does **not** explicitly state `label_len`, OneCycleLR warm-up fraction, or all framework-level default arguments. The runnable examples below use `label_len = seq_len / 2` (`48` or `336`) following the previously documented code convention. This is an **example execution choice, not a manuscript-verified hyperparameter**; check the original successful experiment logs when exact numerical reproduction is required.
 
-Execute commands from the repository root. `--is_training 1` **trains and then automatically evaluates** a run. The currently registered model identifier is `AdaTM`, even though the architecture used is AdaTM.
+## 6. Running AdaTM
 
-### Example 1: ETTh1 (`L=96`, `F=96`)
+Run the following commands from the repository root. In the codebase described by the original README, `--is_training 1` trains the model and then evaluates the final experiment, and `--model AdaTM` selects the AdaTM implementation.
+
+### 6.1 Example: ETTh1, prediction length 96
 
 ```bash
 python -u run.py \
@@ -162,94 +158,36 @@ python -u run.py \
   --enc_in 7 --dec_in 7 --c_out 7 \
   --wavelet db3 --level 2 \
   --patch_len_ls 2,4,4 --stride_ls 1,2,2 \
-  --batch_size 256 --learning_rate 0.0003 --train_epochs 20 \
-  --d_model 32 --n_heads 8 --e_layers 3 --d_ff 128 \
-  --d_state 16 --d_conv 4 \
-  --dropout 0.2 --patience 10 \
+  --batch_size 256 --learning_rate 0.0003 --train_epochs 10 \
+  --d_model 32 --n_heads 8 --e_layers 3 --d_layers 1 \
+  --m_layers 2 --d_ff 128 --d_state 16 --d_conv 4 \
+  --dropout 0.2 --fc_dropout 0.2 --patience 10 \
   --random_seed 2021 --gpu 0
 ```
 
-### Example 2: ETTh2 (`L=672`, `F=96`)
+### 6.2 Example: ETTh2, prediction length 720
+
+The ETTh2 parameters **do not change** when the prediction length increases from 96 to 720:
 
 ```bash
 python -u run.py \
-  --is_training 1 --model AdaTM --model_id AdaTM_ETTh2_672_96 \
+  --is_training 1 --model AdaTM --model_id AdaTM_ETTh2_672_720 \
   --data ETTh2 --root_path ./data/ETT-small/ --data_path ETTh2.csv \
   --features M --target OT --freq h \
-  --seq_len 672 --label_len 336 --pred_len 96 \
+  --seq_len 672 --label_len 336 --pred_len 720 \
   --enc_in 7 --dec_in 7 --c_out 7 \
   --wavelet coif5 --level 3 \
   --patch_len_ls 8,16,32,48 --stride_ls 4,8,16,24 \
-  --batch_size 256 --learning_rate 0.0003 --train_epochs 20 \
-  --d_model 32 --n_heads 8 --e_layers 3 --d_ff 128 \
-  --d_state 16 --d_conv 4 \
-  --dropout 0.2 --patience 10 \
+  --batch_size 256 --learning_rate 0.0003 --train_epochs 10 \
+  --d_model 32 --n_heads 8 --e_layers 3 --d_layers 1 \
+  --m_layers 2 --d_ff 128 --d_state 16 --d_conv 4 \
+  --dropout 0.2 --fc_dropout 0.2 --patience 10 \
   --random_seed 2021 --gpu 0
 ```
 
-### Example 3: Weather (`L=672`, `F=96`)
 
-```bash
-python -u run.py \
-  --is_training 1 --model AdaTM --model_id AdaTM_Weather_672_96 \
-  --data custom --root_path ./data/weather/ --data_path weather.csv \
-  --features M --target OT --freq h \
-  --seq_len 672 --label_len 336 --pred_len 96 \
-  --enc_in 21 --dec_in 21 --c_out 21 \
-  --wavelet db3 --level 2 \
-  --patch_len_ls 4,8,16 --stride_ls 2,4,8 \
-  --batch_size 128 --learning_rate 0.0003 --train_epochs 10 \
-  --d_model 32 --n_heads 8 --e_layers 3 --d_ff 128 \
-  --d_state 16 --d_conv 4 \
-  --dropout 0.2 --patience 10 \
-  --random_seed 2021 --gpu 0
-```
+## 7. Acknowledgements
 
-For **ETTm1**, **ETTm2**, **Electricity**, and **Traffic**, use the corresponding dataset row in the table above with `--data ETTm1` / `ETTm2` (ETT series) or `--data custom` (Electricity/Traffic), and set `--root_path`, `--data_path`, `--enc_in`, `--dec_in`, and `--c_out` accordingly. Use the horizon-specific overrides when changing `--pred_len`.
+The implementation builds upon ideas or tooling associated with [SST](https://arxiv.org/abs/2404.14757), [Mamba](https://github.com/state-spaces/mamba), [PatchTST](https://github.com/yuqinie98/PatchTST), and [Autoformer](https://github.com/thuml/Autoformer). We thank the original authors and maintainers.
 
-For **Traffic**, additionally set `--d_model 64 --dropout 0.3 --fc_dropout 0.3 --pct_start 0.2`. For a multi-GPU setup supported by the environment, the current code exposes `--use_multi_gpu --devices 0,1,2,3`.
 
-### Multiple prediction horizons and seeds
-
-To change horizons, set `--pred_len` to one of `96`, `192`, `336`, or `720` and apply the corresponding dataset/horizon-specific overrides above. To run the five-seed analysis, execute the same configuration separately with:
-
-```bash
---random_seed 2021
---random_seed 2022
---random_seed 2023
---random_seed 2024
---random_seed 2025
-```
-
-Report results from actual completed runs; the README does not substitute for saved command logs and checkpoints.
-
-## Output files
-
-With `--is_training 1`, the entry point runs training followed by testing. The code writes artifacts under locations such as:
-
-```text
-checkpoints/<experiment_setting>/checkpoint.pth
-results/<experiment_setting>/metrics.npy
-results/<experiment_setting>/pred.npy
-results/<experiment_setting>/true.npy
-test_results/<experiment_setting>/
-```
-
-The console also reports MSE and MAE. The checkpoint/experiment setting is generated internally by `run.py`; it includes model/dataset and sequence configuration fields. **Testing with `--is_training 0` in the supplied snapshot uses a different setting-name template from training**, so ensure the correct saved checkpoint path is resolved before using evaluation-only mode.
-
-## Reproducibility notes
-
-- Data splits are chronological, and scalers are fitted only on the training partition.
-- Unless otherwise stated, the representative experiments use multivariate-to-multivariate forecasting (`--features M`).
-- Wavelet basis/level and patch configurations are fixed hyperparameters, not dynamically selected by AdaTM.
-- Check CUDA, PyTorch, `mamba-ssm`, and the locally included wavelet implementation when reproducing results on new machines.
-- The model's registered CLI name (`AdaTM`) is retained for compatibility with the supplied implementation.
-- Some recorded horizon-specific runs include command typos or omitted CLI arguments; refer to successful run logs when validating exact paper results.
-
-## Acknowledgements
-
-This implementation includes components or conventions associated with [SST](https://arxiv.org/abs/2404.14757), [Mamba](https://github.com/state-spaces/mamba), [PatchTST](https://github.com/yuqinie98/PatchTST), and [Autoformer](https://github.com/thuml/Autoformer). We thank the authors of these open-source projects.
-
-## Citation
-
-If you use AdaTM in your research, please cite the associated paper, **“AdaTM: Adaptive Fusion of Transformer and Mamba for Time Series Forecasting.”** The final bibliographic/BibTeX record should be added here once the publication metadata is available.

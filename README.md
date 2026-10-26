@@ -120,7 +120,7 @@ The look-back length is **96 for ETTh1** and **672 for the other six datasets**.
 | Learning-rate scheduler | OneCycleLR |
 | Maximum training epochs | **10** |
 | Training loss | MSE |
-| Early stopping | Validation loss, patience = 10 |
+| Early stopping | Validation loss, patience = 5 |
 | Main experiment random seed | 2021 |
 | Five-seed statistical experiments | 2021, 2022, 2023, 2024, 2025 |
 | Embedding dimension | **32 for all datasets** |
